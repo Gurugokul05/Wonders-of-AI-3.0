@@ -10,10 +10,25 @@ router.use(requireRole("admin"));
 
 router.get("/admin/exams/:examId/live", async (req, res, next) => {
   try {
+    const requestedStatus = String(req.query.status || "all").toLowerCase();
+    const statusFilter =
+      requestedStatus === "all"
+        ? ["active", "terminated", "completed"]
+        : requestedStatus
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean);
+
     const sessions = await ExamSession.find({
       examId: req.params.examId,
-      status: "active",
+      status: {
+        $in:
+          statusFilter.length > 0
+            ? statusFilter
+            : ["active", "terminated", "completed"],
+      },
     })
+      .populate("candidateId", "name email institutionId")
       .sort({ updatedAt: -1 })
       .lean();
 

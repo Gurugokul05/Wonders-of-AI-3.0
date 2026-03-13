@@ -1,6 +1,5 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000/api";
-
 import { getToken } from "./auth";
+import { resolveApiBase } from "./runtimeBackend";
 
 function withAuthHeaders(extra = {}) {
   const token = getToken();
@@ -26,7 +25,8 @@ async function parseJsonOrThrow(res, fallbackMessage) {
 }
 
 export async function login(email, password) {
-  const res = await fetch(`${API_BASE}/auth/login`, {
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -36,7 +36,8 @@ export async function login(email, password) {
 }
 
 export async function startSession(examId, payload) {
-  const res = await fetch(`${API_BASE}/exams/${examId}/sessions/start`, {
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/exams/${examId}/sessions/start`, {
     method: "POST",
     headers: withAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
@@ -45,7 +46,8 @@ export async function startSession(examId, payload) {
 }
 
 export async function sendEventBatch(sessionId, events) {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/events/batch`, {
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/sessions/${sessionId}/events/batch`, {
     method: "POST",
     headers: withAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ events }),
@@ -54,21 +56,32 @@ export async function sendEventBatch(sessionId, events) {
 }
 
 export async function fetchLiveExam(examId) {
-  const res = await fetch(`${API_BASE}/admin/exams/${examId}/live`, {
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/admin/exams/${examId}/live`, {
     headers: withAuthHeaders(),
   });
   return parseJsonOrThrow(res, "Failed to fetch live sessions");
 }
 
 export async function fetchTimeline(sessionId) {
-  const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}/timeline`, {
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/admin/sessions/${sessionId}/timeline`, {
     headers: withAuthHeaders(),
   });
   return parseJsonOrThrow(res, "Failed to fetch timeline");
 }
 
+export async function fetchSessionReport(sessionId) {
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/sessions/${sessionId}/report`, {
+    headers: withAuthHeaders(),
+  });
+  return parseJsonOrThrow(res, "Failed to fetch session report");
+}
+
 export async function detectYoloObjects(payload) {
-  const res = await fetch(`${API_BASE}/ai/yolo/detect`, {
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/ai/yolo/detect`, {
     method: "POST",
     headers: withAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
@@ -78,7 +91,8 @@ export async function detectYoloObjects(payload) {
 }
 
 export async function uploadIncidentClip(sessionId, payload) {
-  const res = await fetch(`${API_BASE}/sessions/${sessionId}/clips`, {
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/sessions/${sessionId}/clips`, {
     method: "POST",
     headers: withAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
@@ -87,7 +101,8 @@ export async function uploadIncidentClip(sessionId, payload) {
 }
 
 export async function getSecureClipUrl(clipId) {
-  const res = await fetch(`${API_BASE}/clips/${clipId}/secure-url`, {
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/clips/${clipId}/secure-url`, {
     headers: withAuthHeaders(),
   });
   return parseJsonOrThrow(res, "Unable to get clip URL");

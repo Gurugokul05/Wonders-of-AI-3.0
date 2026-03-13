@@ -1,13 +1,17 @@
 const SuspiciousEvent = require("../models/SuspiciousEvent");
 const ScoreSnapshot = require("../models/ScoreSnapshot");
 
+const TERMINATION_SCORE_THRESHOLD = 40;
+
 const EVENT_WEIGHTS = {
   MULTIPLE_FACES: 25,
   NO_FACE_OVER_5S: 15,
   LOOKING_AWAY_PATTERN: 10,
+  HEAD_MOVEMENT_ANOMALY: 12,
   LEFT_FRAME: 20,
   PHONE_DETECTED: 30,
   BOOK_DETECTED: 20,
+  KEYBOARD_ACTIVITY: 8,
   SHORTCUT_COPY_PASTE: 8,
   LARGE_PASTE: 12,
   TAB_HIDDEN: 15,
@@ -49,6 +53,14 @@ async function applyEventToSession(session, rawEvent) {
   );
   session.riskLevel = getRiskLevel(session.currentScore);
 
+  if (
+    session.status === "active"
+    && session.currentScore < TERMINATION_SCORE_THRESHOLD
+  ) {
+    session.status = "terminated";
+    session.endTime = new Date();
+  }
+
   const severity = rawEvent.severity || getSeverity(baseWeight);
   const source = rawEvent.source || "system";
   const timestamp = rawEvent.timestamp
@@ -81,11 +93,15 @@ async function applyEventToSession(session, rawEvent) {
     event: savedEvent,
     score: session.currentScore,
     riskLevel: session.riskLevel,
+    sessionStatus: session.status,
+    terminated: session.status === "terminated",
+    terminationThreshold: TERMINATION_SCORE_THRESHOLD,
   };
 }
 
 module.exports = {
   EVENT_WEIGHTS,
+  TERMINATION_SCORE_THRESHOLD,
   getRiskLevel,
   applyEventToSession,
 };

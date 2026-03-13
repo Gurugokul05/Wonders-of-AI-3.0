@@ -2,8 +2,14 @@ import { useEffect, useRef, useState } from "react";
 
 import CandidateCard from "../components/CandidateCard";
 import EventTimeline from "../components/EventTimeline";
-import { fetchLiveExam, fetchTimeline, login } from "../services/api";
-import { getToken, setAuthSession } from "../services/auth";
+import {
+  fetchLiveExam,
+  fetchSessionReport,
+  fetchTimeline,
+  login,
+} from "../services/api";
+import { getToken, getUser, setAuthSession } from "../services/auth";
+import { generateCandidateReportPdf } from "../services/pdfReport";
 import { createSocket } from "../services/socket";
 
 const EXAM_ID = "EXAM-HACK-2026";
@@ -22,38 +28,44 @@ function AdminDashboardPage() {
     let timer;
 
     function initSocket() {
-      if (socketRef.current) return;
-      const socket = createSocket();
-      socketRef.current = socket;
-      socket.emit("admin:join", { examId: EXAM_ID });
-      socket.on("admin:session:update", (payload) => {
-        setSessions((prev) => {
-          const idx = prev.findIndex((s) => s._id === payload.sessionId);
-          if (idx === -1) return prev;
-          const next = [...prev];
-          next[idx] = {
-            ...next[idx],
-            currentScore: payload.score,
-            riskLevel: payload.riskLevel,
-            updatedAt: new Date().toISOString(),
-          };
-          return next;
+      if (socketRef.current) return Promise.resolve(socketRef.current);
+
+      return createSocket().then((socket) => {
+        socketRef.current = socket;
+        socket.emit("admin:join", { examId: EXAM_ID });
+        socket.on("admin:session:update", (payload) => {
+          setSessions((prev) => {
+            const idx = prev.findIndex((s) => s._id === payload.sessionId);
+            if (idx === -1) return prev;
+            const next = [...prev];
+            next[idx] = {
+              ...next[idx],
+              currentScore: payload.score,
+              riskLevel: payload.riskLevel,
+              updatedAt: new Date().toISOString(),
+            };
+            return next;
+          });
+
+          if (selectedSession?._id === payload.sessionId && payload.event) {
+            setTimeline((prev) => [payload.event, ...prev].slice(0, 300));
+          }
         });
 
-        if (selectedSession?._id === payload.sessionId && payload.event) {
-          setTimeline((prev) => [payload.event, ...prev].slice(0, 300));
-        }
+        return socket;
       });
     }
 
     async function load() {
       try {
-        if (!getToken()) {
+        const token = getToken();
+        const user = getUser();
+        if (!token || user?.role !== "admin") {
           const auth = await login(ADMIN_EMAIL, ADMIN_PASSWORD);
           setAuthSession(auth.token, auth.user);
         }
 
-        initSocket();
+        await initSocket();
 
         const data = await fetchLiveExam(EXAM_ID);
         if (mounted) setSessions(data);
@@ -81,10 +93,27 @@ function AdminDashboardPage() {
     setTimeline(events.reverse());
   }
 
+  async function downloadReport(session) {
+    try {
+      const [report, timelineData] = await Promise.all([
+        fetchSessionReport(session._id),
+        fetchTimeline(session._id),
+      ]);
+
+      generateCandidateReportPdf({
+        session,
+        report,
+        timeline: timelineData,
+      });
+    } catch (err) {
+      setError(err.message || "Failed to generate PDF report");
+    }
+  }
+
   return (
     <section className="grid">
       <div className="panel">
-        <h2>Live Trust Meter Dashboard</h2>
+        <h2>Trust Meter Sessions Dashboard</h2>
         <p>Exam: {EXAM_ID}</p>
         <div className="cards">
           {sessions.map((session) => (
@@ -92,9 +121,10 @@ function AdminDashboardPage() {
               key={session._id}
               session={session}
               onSelect={openTimeline}
+              onDownloadReport={downloadReport}
             />
           ))}
-          {sessions.length === 0 && <p>No active sessions yet.</p>}
+          {sessions.length === 0 && <p>No sessions found for this exam yet.</p>}
         </div>
         {error && <p style={{ color: "#ae2012" }}>{error}</p>}
       </div>

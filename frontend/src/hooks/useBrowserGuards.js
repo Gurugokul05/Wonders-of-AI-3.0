@@ -1,7 +1,25 @@
 import { useEffect } from "react";
 
-export function useBrowserGuards(onEvent) {
+const NAVIGATION_KEYS = new Set([
+  "tab",
+  "shift",
+  "control",
+  "alt",
+  "meta",
+  "capslock",
+  "arrowleft",
+  "arrowright",
+  "arrowup",
+  "arrowdown",
+  "escape",
+]);
+
+export function useBrowserGuards(enabled, onEvent) {
   useEffect(() => {
+    if (!enabled) return undefined;
+
+    let recentKeyTimestamps = [];
+
     const onVisibility = () => {
       if (document.hidden) {
         onEvent({
@@ -27,6 +45,7 @@ export function useBrowserGuards(onEvent) {
       const key = e.key.toLowerCase();
       const suspicious =
         (e.ctrlKey || e.metaKey) && ["c", "v", "a"].includes(key);
+
       if (suspicious) {
         onEvent({
           eventType: "SHORTCUT_COPY_PASTE",
@@ -36,6 +55,28 @@ export function useBrowserGuards(onEvent) {
             keyCombo: `${e.ctrlKey ? "Ctrl" : "Meta"}+${key.toUpperCase()}`,
           },
         });
+        return;
+      }
+
+      if (NAVIGATION_KEYS.has(key)) {
+        return;
+      }
+
+      const now = Date.now();
+      recentKeyTimestamps = recentKeyTimestamps.filter((ts) => now - ts < 4000);
+      recentKeyTimestamps.push(now);
+
+      if (recentKeyTimestamps.length >= 8) {
+        onEvent({
+          eventType: "KEYBOARD_ACTIVITY",
+          confidence: 0.72,
+          source: "browser",
+          metadata: {
+            keyPressCount: recentKeyTimestamps.length,
+            windowMs: 4000,
+          },
+        });
+        recentKeyTimestamps = [];
       }
     };
 
@@ -62,5 +103,5 @@ export function useBrowserGuards(onEvent) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("paste", onPaste);
     };
-  }, [onEvent]);
+  }, [enabled, onEvent]);
 }

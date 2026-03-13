@@ -15,6 +15,12 @@ Implemented:
 - Dynamic integrity score updates with weighted penalties
 - Suspicion timeline persistence in MongoDB
 - Basic report generation
+- Candidate journey flow:
+  - Landing page
+  - Candidate login page
+  - Enter test step
+  - Start test step
+  - Score-focused test view (trust score only)
 - Candidate UI with browser guard monitoring:
   - Tab visibility detection
   - Fullscreen exit detection
@@ -22,11 +28,13 @@ Implemented:
   - Large paste detection
   - Microphone energy anomaly monitor
 - Admin live dashboard showing sessions and timelines
+- Admin PDF report generation for each candidate session
 
-Prototype placeholders (ready to replace with real models):
+Prototype notes:
 
-- Computer vision events are currently simulated in `frontend/src/hooks/useSimulatedVision.js`
-- Incident clip recorder is scaffolded in `frontend/src/hooks/useIncidentRecorder.js`
+- Vision monitoring is running via a MediaPipe worker (`frontend/src/workers/visionWorker.js`)
+- YOLO route exists and can connect to external inference service via `YOLO_INFERENCE_URL`
+- Incident clip recorder supports local capture/upload flow for suspicious events
 
 ## Folder Structure
 
@@ -44,7 +52,7 @@ npm install
 npm run dev
 ```
 
-Backend default URL: `http://localhost:5000`
+Backend default URL: `http://localhost:5000` (auto-fallback to next free port if occupied)
 
 ### 2) Frontend
 
@@ -81,14 +89,24 @@ Replace simulated hooks with production modules:
 
 ## Demo Flow
 
-1. Open candidate page (`/`) and click `Start Monitoring`
-2. Trigger suspicious events:
+1. Open landing page (`/`)
+2. Click `Candidate Login`
+3. Login as candidate and go to `/candidate/test`
+4. Click `Enter Test`
+5. Click `Start Test`
+6. Trigger suspicious events:
    - Switch tab
    - Exit fullscreen
    - Press Ctrl+C / Ctrl+V
    - Paste large text
-3. Open admin page (`/admin`) in another window
-4. Observe real-time score drops and timeline updates
+7. Open admin page (`/admin`) in another window
+8. Observe real-time score drops and timeline updates
+9. Click `Download PDF Report` on any candidate card to export session report
+
+## Demo Credentials
+
+- Candidate: `candidate@trustmeter.ai` / `Candidate@123`
+- Admin: `admin@trustmeter.ai` / `Admin@123`
 
 ## Notes
 

@@ -1,5 +1,9 @@
 import { useEffect } from "react";
 
+const AUDIO_ENERGY_THRESHOLD = 46;
+const SPEECH_CONFIRMATION_MS = 2200;
+const EVENT_COOLDOWN_MS = 9000;
+
 export function useAudioMonitor(enabled, onEvent) {
   useEffect(() => {
     if (!enabled) return undefined;
@@ -8,7 +12,8 @@ export function useAudioMonitor(enabled, onEvent) {
     let stream;
     let audioContext;
     let analyser;
-    let voiceFrames = 0;
+    let speechStartTs = null;
+    let lastEventTs = 0;
 
     const start = async () => {
       try {
@@ -23,21 +28,31 @@ export function useAudioMonitor(enabled, onEvent) {
         const tick = () => {
           analyser.getByteFrequencyData(data);
           const avg = data.reduce((a, b) => a + b, 0) / data.length;
+          const now = performance.now();
 
-          if (avg > 35) {
-            voiceFrames += 1;
+          if (avg >= AUDIO_ENERGY_THRESHOLD) {
+            if (speechStartTs === null) speechStartTs = now;
           } else {
-            voiceFrames = Math.max(voiceFrames - 1, 0);
+            speechStartTs = null;
           }
 
-          if (voiceFrames > 40) {
+          const sustainedSpeechMs =
+            speechStartTs === null ? 0 : now - speechStartTs;
+          if (
+            sustainedSpeechMs >= SPEECH_CONFIRMATION_MS &&
+            now - lastEventTs >= EVENT_COOLDOWN_MS
+          ) {
             onEvent({
               eventType: "BACKGROUND_VOICE",
               confidence: 0.7,
               source: "audio",
-              metadata: { avgEnergy: Number(avg.toFixed(2)) },
+              metadata: {
+                avgEnergy: Number(avg.toFixed(2)),
+                sustainedSpeechMs: Math.round(sustainedSpeechMs),
+              },
             });
-            voiceFrames = 0;
+            lastEventTs = now;
+            speechStartTs = null;
           }
 
           rafId = requestAnimationFrame(tick);

@@ -41,6 +41,9 @@ function registerProctoringSocket(io) {
         score: result.score,
         riskLevel: result.riskLevel,
         event: result.event,
+        sessionStatus: result.sessionStatus,
+        terminated: result.terminated,
+        terminationThreshold: result.terminationThreshold,
       };
 
       io.to(`session:${sessionId}`).emit("score:update", payload);
