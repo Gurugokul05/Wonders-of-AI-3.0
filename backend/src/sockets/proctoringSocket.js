@@ -29,25 +29,45 @@ function registerProctoringSocket(io) {
       socket.join(`exam:${examId}`);
     });
 
-    socket.on("event:ingest", async ({ sessionId, event }) => {
-      if (!sessionId || !event) return;
+    socket.on("event:ingest", async ({ sessionId, event }, ack) => {
+      try {
+        if (!sessionId || !event) {
+          if (typeof ack === "function") {
+            ack({ error: "sessionId and event are required" });
+          }
+          return;
+        }
 
-      const session = await ExamSession.findById(sessionId);
-      if (!session) return;
+        const session = await ExamSession.findById(sessionId);
+        if (!session) {
+          if (typeof ack === "function") {
+            ack({ error: "Session not found" });
+          }
+          return;
+        }
 
-      const result = await applyEventToSession(session, event);
-      const payload = {
-        sessionId,
-        score: result.score,
-        riskLevel: result.riskLevel,
-        event: result.event,
-        sessionStatus: result.sessionStatus,
-        terminated: result.terminated,
-        terminationThreshold: result.terminationThreshold,
-      };
+        const result = await applyEventToSession(session, event);
+        const payload = {
+          sessionId,
+          score: result.score,
+          riskLevel: result.riskLevel,
+          event: result.event,
+          sessionStatus: result.sessionStatus,
+          terminated: result.terminated,
+          terminationThreshold: result.terminationThreshold,
+        };
 
-      io.to(`session:${sessionId}`).emit("score:update", payload);
-      io.to(`exam:${session.examId}`).emit("admin:session:update", payload);
+        io.to(`session:${sessionId}`).emit("score:update", payload);
+        io.to(`exam:${session.examId}`).emit("admin:session:update", payload);
+
+        if (typeof ack === "function") {
+          ack(payload);
+        }
+      } catch (error) {
+        if (typeof ack === "function") {
+          ack({ error: error.message || "Failed to ingest event" });
+        }
+      }
     });
   });
 }

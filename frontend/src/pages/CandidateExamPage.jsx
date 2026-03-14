@@ -241,7 +241,39 @@ export default function CandidateExamPage() {
   const socketRef = useRef(null);
   const timerRef = useRef(null);
   const didTerminateForScoreRef = useRef(false);
-  const { attachStream, markIncident } = useIncidentRecorder();
+  const { attachStream, startCapture, markIncident } = useIncidentRecorder();
+
+  const ingestEvent = useCallback(
+    (event) =>
+      new Promise((resolve, reject) => {
+        if (!session?._id || !socketRef.current) {
+          reject(new Error("session-socket-unavailable"));
+          return;
+        }
+
+        socketRef.current.timeout(5000).emit(
+          "event:ingest",
+          {
+            sessionId: session._id,
+            event,
+          },
+          (error, payload) => {
+            if (error) {
+              reject(new Error("Event ingest timed out"));
+              return;
+            }
+
+            if (payload?.error) {
+              reject(new Error(payload.error));
+              return;
+            }
+
+            resolve(payload);
+          },
+        );
+      }),
+    [session?._id],
+  );
 
   const active = phase === "testing";
 
@@ -313,9 +345,9 @@ export default function CandidateExamPage() {
 
   useEffect(() => {
     if (
-      phase === "testing"
-      && score < TERMINATION_SCORE_THRESHOLD
-      && !didTerminateForScoreRef.current
+      phase === "testing" &&
+      score < TERMINATION_SCORE_THRESHOLD &&
+      !didTerminateForScoreRef.current
     ) {
       didTerminateForScoreRef.current = true;
       finishTest("terminated_low_integrity");
@@ -333,23 +365,30 @@ export default function CandidateExamPage() {
   const pushEvent = useCallback(
     async (ev) => {
       const fullEvent = { ...ev, timestamp: new Date().toISOString() };
-      if (
-        ["critical", "high"].includes(ev.severity) ||
-        ev.eventType === "PHONE_DETECTED"
-      ) {
-        await markIncident({
-          eventType: ev.eventType,
-          sessionId: session?._id,
-        });
-      }
-      if (session?._id && socketRef.current) {
-        socketRef.current.emit("event:ingest", {
-          sessionId: session._id,
-          event: fullEvent,
-        });
+      const shouldCaptureEvidence = Boolean(session?._id);
+      const evidenceCapture = shouldCaptureEvidence ? startCapture(5) : null;
+
+      try {
+        const payload = await ingestEvent(fullEvent);
+
+        if (shouldCaptureEvidence && payload?.event?._id && evidenceCapture) {
+          void markIncident({
+            eventType: ev.eventType,
+            sessionId: session?._id,
+            eventId: payload.event._id,
+            durationSec: 5,
+            capture: evidenceCapture,
+          }).then((result) => {
+            if (!result?.ok) {
+              console.warn("Evidence capture/upload failed", result);
+            }
+          });
+        }
+      } catch (error) {
+        console.warn("Failed to process suspicious event", error);
       }
     },
-    [markIncident, session],
+    [ingestEvent, markIncident, session?._id, startCapture],
   );
 
   useBrowserGuards(active, pushEvent);
@@ -367,8 +406,8 @@ export default function CandidateExamPage() {
     setStartError("");
     try {
       if (
-        !document.fullscreenElement
-        && document.documentElement.requestFullscreen
+        !document.fullscreenElement &&
+        document.documentElement.requestFullscreen
       ) {
         // Must be triggered directly in user gesture path.
         await document.documentElement.requestFullscreen().catch(() => {});
@@ -595,16 +634,16 @@ export default function CandidateExamPage() {
             {completionReason === "terminated_low_integrity"
               ? "Test Terminated"
               : completionReason === "exited"
-              ? "Test Exited"
-              : "Test Submitted Successfully"}
+                ? "Test Exited"
+                : "Test Submitted Successfully"}
           </h2>
           <p>
             Thank you, <strong>{candidate?.name || "Candidate"}</strong>. Your
             {completionReason === "terminated_low_integrity"
               ? " session was auto-terminated because your integrity score dropped below 40."
               : completionReason === "exited"
-              ? " test session was exited early."
-              : " responses have been recorded."}
+                ? " test session was exited early."
+                : " responses have been recorded."}
           </p>
           <p>
             Questions answered: <strong>{answered} / 20</strong>
@@ -694,7 +733,9 @@ export default function CandidateExamPage() {
                 <button
                   className="exam-submit-btn"
                   onClick={() => {
-                    if (window.confirm("Are you sure you want to save & exit?")) {
+                    if (
+                      window.confirm("Are you sure you want to save & exit?")
+                    ) {
                       finishTest("submitted");
                     }
                   }}
@@ -704,7 +745,9 @@ export default function CandidateExamPage() {
 
                 <button
                   className="exam-nav-btn secondary"
-                  onClick={() => setCurrentQ((n) => Math.min(QUESTIONS.length - 1, n + 1))}
+                  onClick={() =>
+                    setCurrentQ((n) => Math.min(QUESTIONS.length - 1, n + 1))
+                  }
                   disabled={currentQ === QUESTIONS.length - 1}
                 >
                   Next

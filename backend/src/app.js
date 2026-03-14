@@ -6,12 +6,13 @@ const sessionRoutes = require("./routes/sessionRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const authRoutes = require("./routes/authRoutes");
 const aiRoutes = require("./routes/aiRoutes");
+const publicRoutes = require("./routes/publicRoutes");
 const { requireAuth } = require("./middleware/authMiddleware");
 
 const app = express();
 
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || "*" }));
-app.use(express.json({ limit: "5mb" }));
+app.use(express.json({ limit: "30mb" }));
 app.use(morgan("dev"));
 
 app.get("/api/health", (req, res) => {
@@ -19,6 +20,7 @@ app.get("/api/health", (req, res) => {
 });
 
 app.use("/api", authRoutes);
+app.use("/api", publicRoutes);
 app.use("/api", requireAuth, aiRoutes);
 app.use("/api", requireAuth, sessionRoutes);
 app.use("/api", requireAuth, adminRoutes);

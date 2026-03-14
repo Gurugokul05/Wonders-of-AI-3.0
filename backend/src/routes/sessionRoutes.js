@@ -9,10 +9,7 @@ const { requireRole } = require("../middleware/authMiddleware");
 const {
   saveBase64Clip,
   signClipToken,
-  verifyClipToken,
-  buildClipPath,
 } = require("../services/clipStorageService");
-const fs = require("fs");
 
 const router = express.Router();
 
@@ -124,16 +121,24 @@ router.post("/sessions/:sessionId/clips", async (req, res, next) => {
   try {
     const { clipBase64, eventId, startOffsetSec, endOffsetSec, durationSec } =
       req.body || {};
+    const resolvedEventId = normalizeObjectId(eventId);
 
     if (!clipBase64) {
       return res.status(400).json({ message: "clipBase64 is required" });
+    }
+
+    const session = await ExamSession.findById(req.params.sessionId)
+      .select("_id examId")
+      .lean();
+    if (!session) {
+      return res.status(404).json({ message: "Session not found" });
     }
 
     const savedFile = saveBase64Clip(clipBase64);
 
     const clip = await IncidentClip.create({
       sessionId: req.params.sessionId,
-      eventId,
+      eventId: resolvedEventId || undefined,
       startOffsetSec,
       endOffsetSec,
       durationSec,
@@ -144,11 +149,64 @@ router.post("/sessions/:sessionId/clips", async (req, res, next) => {
       sha256: savedFile.sha256,
     });
 
+    if (resolvedEventId) {
+      const updatedEvent = await SuspiciousEvent.findOneAndUpdate(
+        {
+          _id: resolvedEventId,
+          sessionId: req.params.sessionId,
+        },
+        {
+          clipId: clip._id,
+        },
+        {
+          new: true,
+        },
+      )
+        .populate("clipId", "_id durationSec mimeType createdAt")
+        .lean();
+
+      const io = req.app.get("io");
+      if (io && updatedEvent) {
+        io.to(`exam:${String(session.examId)}`).emit("admin:session:update", {
+          sessionId: String(session._id),
+          event: {
+            ...updatedEvent,
+            clip: updatedEvent.clipId || clip,
+            clipId: updatedEvent.clipId?._id || updatedEvent.clipId || clip._id,
+          },
+        });
+      }
+    }
+
     return res.status(201).json(clip);
   } catch (error) {
     return next(error);
   }
 });
+
+function normalizeObjectId(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+
+  if (typeof value === "object") {
+    if (typeof value.$oid === "string") {
+      return value.$oid;
+    }
+
+    if (typeof value._id === "string") {
+      return value._id;
+    }
+
+    if (typeof value.toString === "function") {
+      const stringified = value.toString();
+      if (stringified && stringified !== "[object Object]") {
+        return stringified;
+      }
+    }
+  }
+
+  return "";
+}
 
 router.get(
   "/clips/:clipId/secure-url",
@@ -173,29 +231,6 @@ router.get(
     }
   },
 );
-
-router.get("/clips/:clipId/stream", async (req, res, next) => {
-  try {
-    const clip = await IncidentClip.findById(req.params.clipId).lean();
-    if (!clip) {
-      return res.status(404).json({ message: "Clip not found" });
-    }
-
-    if (!verifyClipToken(req.query.token, clip._id)) {
-      return res.status(401).json({ message: "Invalid or expired clip token" });
-    }
-
-    const filePath = buildClipPath(clip.storageKey);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: "Clip file missing" });
-    }
-
-    res.setHeader("Content-Type", clip.mimeType || "application/octet-stream");
-    return fs.createReadStream(filePath).pipe(res);
-  } catch (error) {
-    return next(error);
-  }
-});
 
 router.get("/sessions/:sessionId/timeline", async (req, res, next) => {
   try {

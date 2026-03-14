@@ -16,12 +16,36 @@ const EXAM_ID = "EXAM-HACK-2026";
 const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || "admin@trustmeter.ai";
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "Admin@123";
 
+function upsertTimelineEvent(events, incomingEvent) {
+  const incomingId = String(incomingEvent?._id || "");
+  if (!incomingId) {
+    return [...events, incomingEvent].slice(-300);
+  }
+
+  const existingIndex = events.findIndex(
+    (event) => String(event?._id || "") === incomingId,
+  );
+
+  if (existingIndex === -1) {
+    return [...events, incomingEvent].slice(-300);
+  }
+
+  const next = [...events];
+  next[existingIndex] = { ...next[existingIndex], ...incomingEvent };
+  return next;
+}
+
 function AdminDashboardPage() {
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
   const [timeline, setTimeline] = useState([]);
   const [error, setError] = useState("");
   const socketRef = useRef(null);
+  const selectedSessionIdRef = useRef("");
+
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSession?._id || "";
+  }, [selectedSession]);
 
   useEffect(() => {
     let mounted = true;
@@ -42,13 +66,17 @@ function AdminDashboardPage() {
               ...next[idx],
               currentScore: payload.score,
               riskLevel: payload.riskLevel,
+              status: payload.sessionStatus || next[idx].status,
               updatedAt: new Date().toISOString(),
             };
             return next;
           });
 
-          if (selectedSession?._id === payload.sessionId && payload.event) {
-            setTimeline((prev) => [payload.event, ...prev].slice(0, 300));
+          if (
+            selectedSessionIdRef.current === payload.sessionId &&
+            payload.event
+          ) {
+            setTimeline((prev) => upsertTimelineEvent(prev, payload.event));
           }
         });
 
@@ -85,12 +113,41 @@ function AdminDashboardPage() {
         socketRef.current = null;
       }
     };
-  }, [selectedSession]);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedSession?._id) {
+      setTimeline([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadTimeline = async () => {
+      try {
+        const events = await fetchTimeline(selectedSession._id);
+        if (!cancelled) {
+          setTimeline(events.reverse());
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || "Failed to load timeline");
+        }
+      }
+    };
+
+    loadTimeline();
+    const timer = setInterval(loadTimeline, 5000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [selectedSession?._id]);
 
   async function openTimeline(session) {
+    setError("");
     setSelectedSession(session);
-    const events = await fetchTimeline(session._id);
-    setTimeline(events.reverse());
   }
 
   async function downloadReport(session) {

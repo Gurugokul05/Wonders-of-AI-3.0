@@ -1,5 +1,5 @@
 import { getToken } from "./auth";
-import { resolveApiBase } from "./runtimeBackend";
+import { resolveApiBase, resolveBackendOrigin } from "./runtimeBackend";
 
 function withAuthHeaders(extra = {}) {
   const token = getToken();
@@ -106,4 +106,13 @@ export async function getSecureClipUrl(clipId) {
     headers: withAuthHeaders(),
   });
   return parseJsonOrThrow(res, "Unable to get clip URL");
+}
+
+export async function getIncidentClipStreamUrl(clipId) {
+  const [{ streamUrl }, backendOrigin] = await Promise.all([
+    getSecureClipUrl(clipId),
+    resolveBackendOrigin(),
+  ]);
+
+  return `${backendOrigin}${streamUrl}`;
 }

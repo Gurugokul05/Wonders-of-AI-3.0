@@ -17,6 +17,8 @@ async function bootstrap() {
     },
   });
 
+  app.set("io", io);
+
   registerProctoringSocket(io);
 
   const preferredPort = Number(process.env.PORT || 5000);
